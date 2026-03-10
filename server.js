@@ -62,6 +62,8 @@ app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/messages', require('./routes/messageRoutes'));
 app.use('/api/stats', require('./routes/statsRoutes'));
 app.use('/api/tenders', require('./routes/tenderRoutes'));
+app.use('/api/recruitments', require('./routes/recruitmentRoutes'));
+app.use('/api/applications', require('./routes/jobApplicationRoutes'));
 
 // Port
 const PORT = process.env.PORT || 5000;

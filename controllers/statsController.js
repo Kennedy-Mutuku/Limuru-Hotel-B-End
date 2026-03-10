@@ -5,6 +5,8 @@ const OfferClaim = require('../models/OfferClaim');
 const Tender = require('../models/Tender');
 const Bid = require('../models/Bid');
 const User = require('../models/User');
+const Recruitment = require('../models/Recruitment');
+const JobApplication = require('../models/JobApplication');
 
 // const Transaction = require('../models/Transaction'); // Assuming this exists or will be needed for precise revenue
 
@@ -251,7 +253,10 @@ const getSidebarCounts = async (req, res) => {
             tenders,
             bids_total, bids_unread,
             staff,
-            managers
+            managers,
+            recruitments,
+            applications_total,
+            applications_unread
         ] = await Promise.all([
             Booking.countDocuments({ ...filter, status: 'pending' }),
             Booking.countDocuments({ ...filter, isRead: false }),
@@ -264,7 +269,10 @@ const getSidebarCounts = async (req, res) => {
             Bid.countDocuments({ ...filter, status: 'Pending' }),
             Bid.countDocuments({ ...filter, isRead: false }),
             User.countDocuments({ role: 'staff' }),
-            User.countDocuments({ role: 'manager' })
+            User.countDocuments({ role: 'manager' }),
+            Recruitment.countDocuments({ ...filter, status: 'Open' }),
+            JobApplication.countDocuments({ status: 'Pending' }),
+            JobApplication.countDocuments({ isRead: false })
         ]);
 
         res.json({
@@ -274,6 +282,8 @@ const getSidebarCounts = async (req, res) => {
             feedback: { total: feedback_total, unread: feedback_unread },
             tenders,
             bids: { total: bids_total, unread: bids_unread },
+            recruitments,
+            applications: { total: applications_total, unread: applications_unread },
             users: staff,
             managers
         });
