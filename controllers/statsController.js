@@ -104,212 +104,123 @@ const getDashboardStats = async (req, res) => {
             stats.global.avgRating = Math.round((totalRatingSum / totalRatingCount) * 10) / 10;
         }
 
-        // --- 4. Revenue & Activity History - Monthly (Last 6 months) ---
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setUTCHours(0, 0, 0, 0);
-        sixMonthsAgo.setUTCDate(1);
-        sixMonthsAgo.setUTCMonth(sixMonthsAgo.getUTCMonth() - 5);
-
-        const [monthlyRaw, monthlyApps, monthlyBids, monthlyClaims] = await Promise.all([
+        // --- 4. ALL-TIME Monthly Revenue & Activity History ---
+        // We fetch ALL data grouped by month so charts are never empty.
+        const [allMonthlyBookings, allMonthlyApps, allMonthlyBids, allMonthlyClaims] = await Promise.all([
             Booking.aggregate([
-                { $match: { ...statsFilter, createdAt: { $gte: sixMonthsAgo } } },
-                { $group: { _id: { month: { $month: "$createdAt" }, year: { $year: "$createdAt" }, resort: "$resort" }, revenue: { $sum: "$totalAmount" }, count: { $sum: 1 } } },
-                { $sort: { "_id.year": 1, "_id.month": 1 } }
+                { $match: { ...statsFilter } },
+                {
+                    $group: {
+                        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' }, resort: '$resort' },
+                        revenue: { $sum: '$totalAmount' },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { '_id.year': 1, '_id.month': 1 } }
             ]),
             JobApplication.aggregate([
-                { $match: { createdAt: { $gte: sixMonthsAgo } } }, // Applications are global or linked via recruitmentId
-                { $group: { _id: { month: { $month: "$createdAt" }, year: { $year: "$createdAt" } }, count: { $sum: 1 } } }
+                {
+                    $group: {
+                        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { '_id.year': 1, '_id.month': 1 } }
             ]),
             Bid.aggregate([
-                { $match: { createdAt: { $gte: sixMonthsAgo } } },
-                { $group: { _id: { month: { $month: "$createdAt" }, year: { $year: "$createdAt" } }, count: { $sum: 1 } } }
+                {
+                    $group: {
+                        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { '_id.year': 1, '_id.month': 1 } }
             ]),
             OfferClaim.aggregate([
-                { $match: { ...statsFilter, createdAt: { $gte: sixMonthsAgo } } },
-                { $group: { _id: { month: { $month: "$createdAt" }, year: { $year: "$createdAt" } }, count: { $sum: 1 } } }
+                { $match: { ...statsFilter } },
+                {
+                    $group: {
+                        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { '_id.year': 1, '_id.month': 1 } }
             ])
         ]);
 
-        // --- 5. Revenue & Activity History - Weekly (Last 8 weeks) ---
-        const eightWeeksAgo = new Date();
-        eightWeeksAgo.setUTCHours(0, 0, 0, 0);
-        eightWeeksAgo.setUTCDate(eightWeeksAgo.getUTCDate() - 55);
+        // Build a complete month-by-month timeline spanning all available data
+        const buildMonthKey = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
 
-        const [weeklyRaw, weeklyApps, weeklyBids, weeklyClaims] = await Promise.all([
-            Booking.aggregate([
-                { $match: { ...statsFilter, createdAt: { $gte: eightWeeksAgo } } },
-                { $group: { _id: { week: { $isoWeek: "$createdAt" }, year: { $isoWeekYear: "$createdAt" }, resort: "$resort" }, revenue: { $sum: "$totalAmount" }, count: { $sum: 1 } } },
-                { $sort: { "_id.year": 1, "_id.week": 1 } }
-            ]),
-            JobApplication.aggregate([
-                { $match: { createdAt: { $gte: eightWeeksAgo } } },
-                { $group: { _id: { week: { $isoWeek: "$createdAt" }, year: { $isoWeekYear: "$createdAt" } }, count: { $sum: 1 } } }
-            ]),
-            Bid.aggregate([
-                { $match: { createdAt: { $gte: eightWeeksAgo } } },
-                { $group: { _id: { week: { $isoWeek: "$createdAt" }, year: { $isoWeekYear: "$createdAt" } }, count: { $sum: 1 } } }
-            ]),
-            OfferClaim.aggregate([
-                { $match: { ...statsFilter, createdAt: { $gte: eightWeeksAgo } } },
-                { $group: { _id: { week: { $isoWeek: "$createdAt" }, year: { $isoWeekYear: "$createdAt" } }, count: { $sum: 1 } } }
-            ])
-        ]);
+        const monthSet = new Set();
+        [...allMonthlyBookings, ...allMonthlyApps, ...allMonthlyBids, ...allMonthlyClaims].forEach(item => {
+            monthSet.add(buildMonthKey(item._id.year, item._id.month));
+        });
 
-        // --- 6. Revenue & Activity History - Daily (Last 14 days) ---
-        const fourteenDaysAgo = new Date();
-        fourteenDaysAgo.setUTCHours(0, 0, 0, 0);
-        fourteenDaysAgo.setUTCDate(fourteenDaysAgo.getUTCDate() - 13);
+        // If no data at all, create last 6 months so UI is not empty
+        if (monthSet.size === 0) {
+            for (let i = 5; i >= 0; i--) {
+                const d = new Date();
+                d.setUTCMonth(d.getUTCMonth() - i);
+                monthSet.add(buildMonthKey(d.getUTCFullYear(), d.getUTCMonth() + 1));
+            }
+        }
 
-        const [dailyRaw, dailyApps, dailyBids, dailyClaims] = await Promise.all([
-            Booking.aggregate([
-                { $match: { ...statsFilter, createdAt: { $gte: fourteenDaysAgo } } },
-                { $group: { _id: { day: { $dayOfMonth: "$createdAt" }, month: { $month: "$createdAt" }, year: { $year: "$createdAt" }, resort: "$resort" }, revenue: { $sum: "$totalAmount" }, count: { $sum: 1 } } },
-                { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } }
-            ]),
-            JobApplication.aggregate([
-                { $match: { createdAt: { $gte: fourteenDaysAgo } } },
-                { $group: { _id: { day: { $dayOfMonth: "$createdAt" }, month: { $month: "$createdAt" }, year: { $year: "$createdAt" } }, count: { $sum: 1 } } }
-            ]),
-            Bid.aggregate([
-                { $match: { createdAt: { $gte: fourteenDaysAgo } } },
-                { $group: { _id: { day: { $dayOfMonth: "$createdAt" }, month: { $month: "$createdAt" }, year: { $year: "$createdAt" } }, count: { $sum: 1 } } }
-            ]),
-            OfferClaim.aggregate([
-                { $match: { ...statsFilter, createdAt: { $gte: fourteenDaysAgo } } },
-                { $group: { _id: { day: { $dayOfMonth: "$createdAt" }, month: { $month: "$createdAt" }, year: { $year: "$createdAt" } }, count: { $sum: 1 } } }
-            ])
-        ]);
+        // Fill in any missing months between first and last
+        const sortedKeys = [...monthSet].sort();
+        const firstKey = sortedKeys[0];
+        const [firstY, firstM] = firstKey.split('-').map(Number);
+        const now = new Date();
+        const allMonthKeys = [];
+        let cur = new Date(Date.UTC(firstY, firstM - 1, 1));
+        const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+        while (cur < end) {
+            allMonthKeys.push(buildMonthKey(cur.getUTCFullYear(), cur.getUTCMonth() + 1));
+            cur.setUTCMonth(cur.getUTCMonth() + 1);
+        }
 
-        const properties_list = ['limuru', 'kanamai', 'kisumu'];
+        // Keep last 12 months max for readability
+        const recentMonthKeys = allMonthKeys.slice(-12);
 
-        // Months Generator
-        const months = [];
-        for (let i = 0; i < 6; i++) {
-            const d = new Date();
-            d.setUTCHours(12, 0, 0, 0);
-            d.setUTCDate(1);
-            d.setUTCMonth(d.getUTCMonth() - (5 - i));
-            const obj = {
-                name: d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }),
-                month: d.getUTCMonth() + 1,
-                year: d.getUTCFullYear(),
-                applications: 0,
-                bids: 0,
-                claims: 0,
-                revenue: 0,
-                bookings: 0
+        const monthMap = {};
+        recentMonthKeys.forEach(key => {
+            const [y, m] = key.split('-').map(Number);
+            const date = new Date(Date.UTC(y, m - 1, 1));
+            monthMap[key] = {
+                name: date.toLocaleString('en-US', { month: 'short', year: '2-digit' }),
+                revenue: 0, bookings: 0, applications: 0, bids: 0, claims: 0,
+                limuru_revenue: 0, kanamai_revenue: 0, kisumu_revenue: 0
             };
-            properties_list.forEach(p => {
-                obj[`${p}_revenue`] = 0;
-            });
-            months.push(obj);
-        }
-        monthlyRaw.forEach(item => {
-            const entry = months.find(m => m.month === item._id.month && m.year === item._id.year);
-            if (entry) {
-                entry[`${item._id.resort}_revenue`] = item.revenue;
-                entry.revenue += item.revenue;
-                entry.bookings += item.count;
-            }
-        });
-        monthlyApps.forEach(item => {
-            const entry = months.find(m => m.month === item._id.month && m.year === item._id.year);
-            if (entry) entry.applications = item.count;
-        });
-        monthlyBids.forEach(item => {
-            const entry = months.find(m => m.month === item._id.month && m.year === item._id.year);
-            if (entry) entry.bids = item.count;
-        });
-        monthlyClaims.forEach(item => {
-            const entry = months.find(m => m.month === item._id.month && m.year === item._id.year);
-            if (entry) entry.claims = item.count;
         });
 
-        // Weeks Generator
-        const weeks = [];
-        for (let i = 0; i < 8; i++) {
-            const d = new Date();
-            d.setUTCHours(12, 0, 0, 0);
-            d.setUTCDate(d.getUTCDate() - (7 * (7 - i)));
-
-            const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-            const dayNr = (target.getUTCDay() + 6) % 7;
-            target.setUTCDate(target.getUTCDate() - dayNr + 3);
-            const firstThursday = target.valueOf();
-            target.setUTCMonth(0, 1);
-            if (target.getUTCDay() !== 4) {
-                target.setUTCDate(1 + ((4 - target.getUTCDay()) + 7) % 7);
-            }
-            const w = 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
-            const year = new Date(firstThursday).getUTCFullYear();
-            const obj = { name: `Wk ${w}`, week: w, year: year, applications: 0, bids: 0, claims: 0, revenue: 0, bookings: 0 };
-            properties_list.forEach(p => obj[`${p}_revenue`] = 0);
-            weeks.push(obj);
-        }
-        weeklyRaw.forEach(item => {
-            const entry = weeks.find(w => w.week === item._id.week && w.year === item._id.year);
-            if (entry) {
-                entry[`${item._id.resort}_revenue`] = item.revenue;
-                entry.revenue += item.revenue;
-                entry.bookings += item.count;
+        allMonthlyBookings.forEach(item => {
+            const key = buildMonthKey(item._id.year, item._id.month);
+            if (monthMap[key]) {
+                monthMap[key].revenue += item.revenue;
+                monthMap[key].bookings += item.count;
+                const resort = item._id.resort;
+                if (['limuru', 'kanamai', 'kisumu'].includes(resort)) {
+                    monthMap[key][`${resort}_revenue`] = (monthMap[key][`${resort}_revenue`] || 0) + item.revenue;
+                }
             }
         });
-        weeklyApps.forEach(item => {
-            const entry = weeks.find(w => w.week === item._id.week && w.year === item._id.year);
-            if (entry) entry.applications = item.count;
-        });
-        weeklyBids.forEach(item => {
-            const entry = weeks.find(w => w.week === item._id.week && w.year === item._id.year);
-            if (entry) entry.bids = item.count;
-        });
-        weeklyClaims.forEach(item => {
-            const entry = weeks.find(w => w.week === item._id.week && w.year === item._id.year);
-            if (entry) entry.claims = item.count;
+
+        allMonthlyApps.forEach(item => {
+            const key = buildMonthKey(item._id.year, item._id.month);
+            if (monthMap[key]) monthMap[key].applications += item.count;
         });
 
-        // Days Generator
-        const days = [];
-        for (let i = 0; i < 14; i++) {
-            const d = new Date();
-            d.setUTCHours(12, 0, 0, 0);
-            d.setUTCDate(d.getUTCDate() - (13 - i));
-            const label = d.toLocaleString('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' });
-            const obj = {
-                name: label,
-                day: d.getUTCDate(),
-                month: d.getUTCMonth() + 1,
-                year: d.getUTCFullYear(),
-                applications: 0,
-                bids: 0,
-                claims: 0,
-                revenue: 0,
-                bookings: 0
-            };
-            properties_list.forEach(p => obj[`${p}_revenue`] = 0);
-            days.push(obj);
-        }
-        dailyRaw.forEach(item => {
-            const entry = days.find(d => d.day === item._id.day && d.month === item._id.month && d.year === item._id.year);
-            if (entry) {
-                entry[`${item._id.resort}_revenue`] = item.revenue;
-                entry.revenue += item.revenue;
-                entry.bookings += item.count;
-            }
-        });
-        dailyApps.forEach(item => {
-            const entry = days.find(d => d.day === item._id.day && d.month === item._id.month && d.year === item._id.year);
-            if (entry) entry.applications = item.count;
-        });
-        dailyBids.forEach(item => {
-            const entry = days.find(d => d.day === item._id.day && d.month === item._id.month && d.year === item._id.year);
-            if (entry) entry.bids = item.count;
-        });
-        dailyClaims.forEach(item => {
-            const entry = days.find(d => d.day === item._id.day && d.month === item._id.month && d.year === item._id.year);
-            if (entry) entry.claims = item.count;
+        allMonthlyBids.forEach(item => {
+            const key = buildMonthKey(item._id.year, item._id.month);
+            if (monthMap[key]) monthMap[key].bids += item.count;
         });
 
-        stats.revenueHistory = { months, weeks, days };
+        allMonthlyClaims.forEach(item => {
+            const key = buildMonthKey(item._id.year, item._id.month);
+            if (monthMap[key]) monthMap[key].claims += item.count;
+        });
+
+        const months = recentMonthKeys.map(key => monthMap[key]);
+        stats.revenueHistory = { months };
 
         res.json(stats);
     } catch (error) {
