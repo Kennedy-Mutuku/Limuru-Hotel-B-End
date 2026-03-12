@@ -78,36 +78,8 @@ app.use((err, req, res, next) => {
     });
 });
 
-const seedAdmin = async () => {
-    // Check if connected
-    if (mongoose.connection.readyState !== 1) {
-        console.warn('Skipping seeder: Database not connected');
-        return;
-    }
-
-    try {
-        const User = require('./models/User');
-        const adminExists = await User.findOne({ email: 'generalmanager@jumuiaresorts.com' });
-        if (!adminExists) {
-            await User.create({
-                name: 'General Manager',
-                email: 'generalmanager@jumuiaresorts.com',
-                password: '12345678', // Note: This will be hashed by the model pre-save hook
-                role: 'general-manager',
-                properties: ['limuru', 'kanamai', 'kisumu']
-            });
-            console.log('Seeded initial admin user');
-        }
-    } catch (error) {
-        console.error('Seeding error:', error);
-    }
-};
-
-// Use a self-invoking function to avoid top-level await if needed, 
-// though we just want it to run in background.
-connectDB().then(() => {
-    seedAdmin();
-});
+// Connect to Database
+connectDB();
 
 
 app.listen(PORT, () => {

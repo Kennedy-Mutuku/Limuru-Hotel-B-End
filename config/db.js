@@ -1,21 +1,28 @@
 const mongoose = require('mongoose');
 
-const connectDB = async () => {
-    try {
-        mongoose.set('bufferCommands', false);
-        const conn = await mongoose.connect(process.env.MONGO_URI, {
-            serverSelectionTimeoutMS: 5000,
-        });
-        console.log(`MongoDB Connected: ${conn.connection.host}`);
+const connectDB = async (retryCount = 5) => {
+    while (retryCount > 0) {
+        try {
+            console.log(`Connecting to MongoDB... (Attempts remaining: ${retryCount})`);
+            mongoose.set('bufferCommands', false);
+            const conn = await mongoose.connect(process.env.MONGO_URI, {
+                serverSelectionTimeoutMS: 5000,
+            });
+            console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
 
-        // Run index cleanup after connection
-        await cleanupIndexes();
+            // Run index cleanup after connection
+            await cleanupIndexes();
 
-        return true;
-    } catch (error) {
-        console.error(`Database Connection Error: ${error.message}`);
-        return false;
+            return true;
+        } catch (error) {
+            retryCount--;
+            console.error(`❌ Database Connection Error: ${error.message}`);
+            if (retryCount === 0) return false;
+            console.log('Retrying in 3 seconds...');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+        }
     }
+    return false;
 };
 
 const cleanupIndexes = async () => {
