@@ -16,7 +16,8 @@ const tenderSchema = new mongoose.Schema({
     description: { type: String, required: true },
     requirements: [{ type: String }],
     closingDate: { type: Date, required: true },
-    tenderDocument: { type: String }, // Base64 or URL for PDF
+    tenderDocument: { type: String }, // Base64 or URL for PDF (Legacy)
+    googleFormLink: { type: String }, // Link for application redirect
     status: {
         type: String,
         enum: ['Open', 'Closed', 'Awarded', 'Cancelled'],
