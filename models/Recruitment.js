@@ -20,6 +20,8 @@ const recruitmentSchema = new mongoose.Schema({
     },
     resort: { type: String, default: 'global' },
     requiredDocuments: [{ type: String }], // e.g. ["CV", "Cover Letter", "Academic Certificate"]
+    googleFormLink: { type: String },
+    jobDescriptionPdf: { type: String }, // Base64
     postedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, {
     timestamps: true
