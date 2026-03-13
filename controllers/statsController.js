@@ -1,12 +1,5 @@
-const Booking = require('../models/Booking');
-const Feedback = require('../models/Feedback');
-const Offer = require('../models/Offer');
-const OfferClaim = require('../models/OfferClaim');
-const Tender = require('../models/Tender');
-const Bid = require('../models/Bid');
-const User = require('../models/User');
-const Recruitment = require('../models/Recruitment');
 const JobApplication = require('../models/JobApplication');
+const Message = require('../models/Message');
 
 // const Transaction = require('../models/Transaction'); // Assuming this exists or will be needed for precise revenue
 
@@ -105,8 +98,7 @@ const getDashboardStats = async (req, res) => {
         }
 
         // --- 4. ALL-TIME Monthly Revenue & Activity History ---
-        // We fetch ALL data grouped by month so charts are never empty.
-        const [allMonthlyBookings, allMonthlyApps, allMonthlyBids, allMonthlyClaims] = await Promise.all([
+        const [allMonthlyBookings, allMonthlyFeedback, allMonthlyInquiries, allMonthlyClaims] = await Promise.all([
             Booking.aggregate([
                 { $match: { ...statsFilter } },
                 {
@@ -118,7 +110,8 @@ const getDashboardStats = async (req, res) => {
                 },
                 { $sort: { '_id.year': 1, '_id.month': 1 } }
             ]),
-            JobApplication.aggregate([
+            Feedback.aggregate([
+                { $match: { ...statsFilter } },
                 {
                     $group: {
                         _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
@@ -127,7 +120,8 @@ const getDashboardStats = async (req, res) => {
                 },
                 { $sort: { '_id.year': 1, '_id.month': 1 } }
             ]),
-            Bid.aggregate([
+            Message.aggregate([
+                { $match: { ...statsFilter } },
                 {
                     $group: {
                         _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
@@ -204,19 +198,19 @@ const getDashboardStats = async (req, res) => {
             }
         });
 
-        allMonthlyApps.forEach(item => {
+        allMonthlyFeedback.forEach(item => {
             const key = buildMonthKey(item._id.year, item._id.month);
-            if (monthMap[key]) monthMap[key].applications += item.count;
+            if (monthMap[key]) monthMap[key].feedback = item.count;
         });
 
-        allMonthlyBids.forEach(item => {
+        allMonthlyInquiries.forEach(item => {
             const key = buildMonthKey(item._id.year, item._id.month);
-            if (monthMap[key]) monthMap[key].bids += item.count;
+            if (monthMap[key]) monthMap[key].inquiries = item.count;
         });
 
         allMonthlyClaims.forEach(item => {
             const key = buildMonthKey(item._id.year, item._id.month);
-            if (monthMap[key]) monthMap[key].claims += item.count;
+            if (monthMap[key]) monthMap[key].claims = item.count;
         });
 
         const months = recentMonthKeys.map(key => monthMap[key]);
@@ -324,8 +318,12 @@ const getDetailedReport = async (req, res) => {
             }
         ]);
 
-        // 2. Tenders & Bids Performance
-        const [tenders, bids] = await Promise.all([
+        // 2. Communications & Analytics Performance
+        const [messages, tenders, bids] = await Promise.all([
+            Message.aggregate([
+                { $match: queryFilter.resort ? { resort: queryFilter.resort } : {} },
+                { $group: { _id: "$status", count: { $sum: 1 } } }
+            ]),
             Tender.find(queryFilter.resort ? { resort: queryFilter.resort } : {}),
             Bid.aggregate([
                 { $match: queryFilter.resort ? { resort: queryFilter.resort } : {} },
@@ -370,6 +368,10 @@ const getDetailedReport = async (req, res) => {
 
         res.json({
             bookings: bookingReport,
+            communications: {
+                total: messages.reduce((acc, m) => acc + m.count, 0),
+                status: messages
+            },
             tenders: {
                 total: tenders.length,
                 status: tenders.reduce((acc, t) => {
